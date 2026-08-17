@@ -1,7 +1,9 @@
 import axios from 'axios'
 
+const API_URL = import.meta.env.VITE_API_URL
+
 const client = axios.create({
-  baseURL: '/api',
+  baseURL: `${API_URL}/api`,
   headers: { 'Content-Type': 'application/json' },
   timeout: 60000,
 })
@@ -9,9 +11,11 @@ const client = axios.create({
 // ── JWT Request Interceptor ───────────────────────────────────────────────────
 client.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token')
+
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+
   return config
 })
 
@@ -27,11 +31,13 @@ function processQueue(error, token = null) {
       resolve(token)
     }
   })
+
   failedQueue = []
 }
 
 client.interceptors.response.use(
   (response) => response,
+
   async (error) => {
     const originalRequest = error.config
 
@@ -45,7 +51,6 @@ client.interceptors.response.use(
     }
 
     if (isRefreshing) {
-      // Queue requests while a refresh is in progress
       return new Promise((resolve, reject) => {
         failedQueue.push({ resolve, reject })
       }).then((token) => {
@@ -58,6 +63,7 @@ client.interceptors.response.use(
     isRefreshing = true
 
     const refresh = localStorage.getItem('refresh_token')
+
     if (!refresh) {
       isRefreshing = false
       clearAndRedirect()
@@ -65,13 +71,27 @@ client.interceptors.response.use(
     }
 
     try {
-      const { data } = await axios.post('/api/auth/refresh', { refresh })
+      const { data } = await axios.post(
+        `${API_URL}/api/auth/refresh`,
+        { refresh },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          timeout: 60000,
+        }
+      )
+
       localStorage.setItem('access_token', data.access)
+
       if (data.refresh) {
         localStorage.setItem('refresh_token', data.refresh)
       }
+
       processQueue(null, data.access)
+
       originalRequest.headers.Authorization = `Bearer ${data.access}`
+
       return client(originalRequest)
     } catch (refreshError) {
       processQueue(refreshError, null)
@@ -86,8 +106,11 @@ client.interceptors.response.use(
 function clearAndRedirect() {
   localStorage.removeItem('access_token')
   localStorage.removeItem('refresh_token')
-  // Only redirect if not already on login/auth pages
-  if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/auth')) {
+
+  if (
+    !window.location.pathname.startsWith('/login') &&
+    !window.location.pathname.startsWith('/auth')
+  ) {
     window.location.href = '/login'
   }
 }
@@ -95,7 +118,9 @@ function clearAndRedirect() {
 // ── Repository endpoints ──────────────────────────────────────────────────────
 
 export const analyzeRepository = (githubUrl) =>
-  client.post('/repositories/analyze', { github_url: githubUrl })
+  client.post('/repositories/analyze', {
+    github_url: githubUrl,
+  })
 
 export const getRepository = (id) =>
   client.get(`/repositories/${id}/`)
@@ -108,13 +133,21 @@ export const getArchitecture = (id) =>
 
 // ── Chat endpoints ────────────────────────────────────────────────────────────
 
-export const chatWithRepo = (repositoryId, question, sessionId = null) =>
-  client.post('/chat/', { repository_id: repositoryId, question, session_id: sessionId })
+export const chatWithRepo = (
+  repositoryId,
+  question,
+  sessionId = null
+) =>
+  client.post('/chat/', {
+    repository_id: repositoryId,
+    question,
+    session_id: sessionId,
+  })
 
 export const getChatHistory = (repoId) =>
   client.get(`/chat/history/${repoId}/`)
 
-// ── SSE — real-time indexing progress ────────────────────────────────────────
+// ── SSE — real-time indexing progress ─────────────────────────────────────────
 
 /**
  * Open a Server-Sent Events connection for a repository's indexing progress.
@@ -123,13 +156,21 @@ export const getChatHistory = (repoId) =>
  * access token is passed as a query param which the Django view validates.
  *
  * @param {string|number} repoId - Repository ID
- * @param {function}      onMessage - Called with parsed JSON data on each event
- * @param {function}      onError   - Called if the connection errors/closes
- * @returns {EventSource} The EventSource instance — call .close() to stop it
+ * @param {function} onMessage - Called with parsed JSON data on each event
+ * @param {function} onError - Called if the connection errors/closes
+ * @returns {EventSource} The EventSource instance
  */
-export const streamRepositoryStatus = (repoId, onMessage, onError) => {
+export const streamRepositoryStatus = (
+  repoId,
+  onMessage,
+  onError
+) => {
   const token = localStorage.getItem('access_token') || ''
-  const url = `/api/repositories/${repoId}/stream/?token=${encodeURIComponent(token)}`
+
+  const url =
+    `${API_URL}/api/repositories/${repoId}/stream/` +
+    `?token=${encodeURIComponent(token)}`
+
   const es = new EventSource(url)
 
   es.onmessage = (event) => {
@@ -143,7 +184,10 @@ export const streamRepositoryStatus = (repoId, onMessage, onError) => {
 
   es.onerror = () => {
     es.close()
-    if (onError) onError()
+
+    if (onError) {
+      onError()
+    }
   }
 
   return es
