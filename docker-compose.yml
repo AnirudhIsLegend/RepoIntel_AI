@@ -1,0 +1,83 @@
+# ── RepoIntel AI — Docker Compose ────────────────────────────────────────────
+#
+# Services:
+#   web      — Django (Gunicorn) API server
+#   celery   — Celery worker for background repo ingestion
+#   redis    — Local Redis broker (replace with Upstash URL in production)
+#
+# Usage:
+#   docker-compose up --build          # start all services
+#   docker-compose run web python manage.py migrate  # run migrations
+#
+# For production, remove the `redis` service and set REDIS_URL to your
+# Upstash endpoint in the .env file.
+
+version: '3.9'
+
+services:
+
+  # ── Redis (local dev broker) ───────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: repointel-redis
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Django / Gunicorn API ──────────────────────────────────────────────────
+  web:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: repointel-web
+    env_file:
+      - ./backend/.env
+    environment:
+      # Override Redis URL to use the docker service name
+      - REDIS_URL=redis://redis:6379/0
+    ports:
+      - '8000:8000'
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      # Mount cloned_repos as a named volume shared with the celery worker
+      - cloned_repos:/app/cloned_repos
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             gunicorn config.wsgi:application
+               --bind 0.0.0.0:8000
+               --workers 2
+               --timeout 120
+               --access-logfile -
+               --error-logfile -"
+
+  # ── Celery Worker ─────────────────────────────────────────────────────────
+  celery:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: repointel-celery
+    env_file:
+      - ./backend/.env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - cloned_repos:/app/cloned_repos
+    command: >
+      celery -A config worker
+        --loglevel=info
+        --concurrency=2
+        --queues=celery
+
+volumes:
+  cloned_repos:
+    # Shared between web and celery so cleanup in the task works correctly
+    driver: local
