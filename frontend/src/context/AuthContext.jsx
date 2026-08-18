@@ -26,9 +26,10 @@ export function AuthProvider({ children }) {
 
     client
       .get('/auth/me')
-      .then(({ data }) => setUser(data))
+      .then(({ data }) => {
+        setUser(data)
+      })
       .catch(async () => {
-        // Token may be expired — try refresh
         const refreshed = await tryRefresh()
 
         if (refreshed) {
@@ -42,16 +43,42 @@ export function AuthProvider({ children }) {
           clearTokens()
         }
       })
-      .finally(() => setLoading(false))
+      .finally(() => {
+        setLoading(false)
+      })
   }, [])
 
-  /* ── Login: redirect browser directly to GitHub OAuth ── */
-  const login = useCallback(() => {
-    window.location.href = `${import.meta.env.VITE_API_URL}/api/auth/github/login`
+  /* ── Login: get GitHub OAuth URL, then redirect ── */
+  const login = useCallback(async () => {
+    try {
+      const { data } = await client.get('/auth/github/login')
+
+      if (!data.auth_url) {
+        throw new Error('GitHub authorization URL was not returned')
+      }
+
+      // Save OAuth state so the callback page can verify it
+      if (data.state) {
+        localStorage.setItem('oauth_state', data.state)
+      }
+
+      // Redirect browser to GitHub
+      window.location.href = data.auth_url
+    } catch (err) {
+      console.error('Failed to initiate GitHub login:', err)
+      throw err
+    }
   }, [])
 
   /* ── Handle OAuth callback ── */
   const handleCallback = useCallback(async (code, state) => {
+    const savedState = localStorage.getItem('oauth_state')
+
+    // Prevent CSRF / invalid OAuth callbacks
+    if (!savedState || savedState !== state) {
+      throw new Error('Invalid OAuth state')
+    }
+
     const { data } = await client.post('/auth/github/callback', {
       code,
       state,
@@ -59,8 +86,6 @@ export function AuthProvider({ children }) {
 
     localStorage.setItem('access_token', data.access)
     localStorage.setItem('refresh_token', data.refresh)
-
-    // OAuth state is no longer needed
     localStorage.removeItem('oauth_state')
 
     setUser(data.user)
@@ -74,10 +99,12 @@ export function AuthProvider({ children }) {
 
     try {
       if (refresh) {
-        await client.post('/auth/logout', { refresh })
+        await client.post('/auth/logout', {
+          refresh,
+        })
       }
     } catch {
-      // Ignore logout errors — token may already be invalid
+      // Ignore logout errors
     } finally {
       clearTokens()
       setUser(null)

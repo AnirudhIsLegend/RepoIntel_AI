@@ -9,7 +9,7 @@ POST /api/auth/logout           → blacklist refresh token
 """
 import logging
 import secrets
-
+from urllib.parse import urlencode
 import requests as http_requests
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -37,26 +37,46 @@ class GitHubLoginView(APIView):
 
     def get(self, request):
         client_id = settings.GITHUB_CLIENT_ID
+
         if not client_id:
             return Response(
-                {'error': 'GitHub OAuth is not configured. Set GITHUB_CLIENT_ID.'},
+                {
+                    'error': (
+                        'GitHub OAuth is not configured. '
+                        'Set GITHUB_CLIENT_ID.'
+                    )
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        # Generate and store a random state parameter to prevent CSRF
+        # Generate random state for CSRF protection
         state = secrets.token_urlsafe(32)
+
+        # Store state in session as an additional server-side safeguard
         request.session['oauth_state'] = state
 
-        redirect_uri = f"{settings.FRONTEND_URL}/auth/callback"
-        auth_url = (
-            f"{GITHUB_AUTH_URL}"
-            f"?client_id={client_id}"
-            f"&redirect_uri={redirect_uri}"
-            f"&scope=read:user user:email"
-            f"&state={state}"
+        # IMPORTANT:
+        # FRONTEND_URL must include https:// in production.
+        redirect_uri = f"{settings.FRONTEND_URL.rstrip('/')}/auth/callback"
+
+        params = {
+            'client_id': client_id,
+            'redirect_uri': redirect_uri,
+            'scope': 'read:user user:email',
+            'state': state,
+        }
+
+        auth_url = f"{GITHUB_AUTH_URL}?{urlencode(params)}"
+
+        logger.info(
+            'Generated GitHub OAuth URL with redirect URI: %s',
+            redirect_uri,
         )
 
-        return Response({'auth_url': auth_url, 'state': state})
+        return Response({
+            'auth_url': auth_url,
+            'state': state,
+        })
 
 
 class GitHubCallbackView(APIView):
@@ -71,17 +91,15 @@ class GitHubCallbackView(APIView):
         code = serializer.validated_data['code']
         state = serializer.validated_data['state']
 
-        # State validation is handled by the frontend (localStorage) before calling
-        # this endpoint, so no server-side session check is needed here.
+        redirect_uri = f"{settings.FRONTEND_URL.rstrip('/')}/auth/callback"
 
-        # Exchange code for GitHub access token
         token_response = http_requests.post(
             GITHUB_TOKEN_URL,
             data={
                 'client_id': settings.GITHUB_CLIENT_ID,
                 'client_secret': settings.GITHUB_CLIENT_SECRET,
                 'code': code,
-                'redirect_uri': f"{settings.FRONTEND_URL}/auth/callback",
+                'redirect_uri': redirect_uri,
             },
             headers={'Accept': 'application/json'},
             timeout=10,
