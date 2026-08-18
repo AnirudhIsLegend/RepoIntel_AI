@@ -18,6 +18,7 @@ export function AuthProvider({ children }) {
   /* ── Bootstrap: check stored tokens on mount ── */
   useEffect(() => {
     const token = localStorage.getItem('access_token')
+
     if (!token) {
       setLoading(false)
       return
@@ -29,6 +30,7 @@ export function AuthProvider({ children }) {
       .catch(async () => {
         // Token may be expired — try refresh
         const refreshed = await tryRefresh()
+
         if (refreshed) {
           try {
             const { data } = await client.get('/auth/me')
@@ -43,31 +45,33 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false))
   }, [])
 
-  /* ── Login: redirect to GitHub OAuth ── */
-  const login = useCallback(async () => {
-    try {
-      const { data } = await client.get('/auth/github/login')
-      // Persist state in localStorage so it survives the full-page GitHub redirect
-      localStorage.setItem('oauth_state', data.state)
-      window.location.href = data.auth_url
-    } catch (err) {
-      console.error('Failed to initiate GitHub login:', err)
-      throw err
-    }
+  /* ── Login: redirect browser directly to GitHub OAuth ── */
+  const login = useCallback(() => {
+    window.location.href = `${import.meta.env.VITE_API_URL}/api/auth/github/login`
   }, [])
 
   /* ── Handle OAuth callback ── */
   const handleCallback = useCallback(async (code, state) => {
-    const { data } = await client.post('/auth/github/callback', { code, state })
+    const { data } = await client.post('/auth/github/callback', {
+      code,
+      state,
+    })
+
     localStorage.setItem('access_token', data.access)
     localStorage.setItem('refresh_token', data.refresh)
+
+    // OAuth state is no longer needed
+    localStorage.removeItem('oauth_state')
+
     setUser(data.user)
+
     return data.user
   }, [])
 
   /* ── Logout ── */
   const logout = useCallback(async () => {
     const refresh = localStorage.getItem('refresh_token')
+
     try {
       if (refresh) {
         await client.post('/auth/logout', { refresh })
@@ -81,7 +85,16 @@ export function AuthProvider({ children }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, loading, login, logout, handleCallback }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated,
+        loading,
+        login,
+        logout,
+        handleCallback,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )
@@ -92,18 +105,25 @@ export function AuthProvider({ children }) {
 function clearTokens() {
   localStorage.removeItem('access_token')
   localStorage.removeItem('refresh_token')
+  localStorage.removeItem('oauth_state')
 }
 
 async function tryRefresh() {
   const refresh = localStorage.getItem('refresh_token')
+
   if (!refresh) return false
 
   try {
-    const { data } = await client.post('/auth/refresh', { refresh })
+    const { data } = await client.post('/auth/refresh', {
+      refresh,
+    })
+
     localStorage.setItem('access_token', data.access)
+
     if (data.refresh) {
       localStorage.setItem('refresh_token', data.refresh)
     }
+
     return true
   } catch {
     clearTokens()
