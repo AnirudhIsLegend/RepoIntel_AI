@@ -359,12 +359,13 @@ if REDIS_URL.startswith('rediss://'):
 
     _redis_ssl_ctx = ssl.create_default_context()
 
+    # Only pass ssl_context — it already loads the system CA bundle.
+    # Do NOT mix ssl_cert_reqs / ssl_ca_certs with ssl_context;
+    # that combination causes silent SSL failures in kombu on slim Docker images.
     CELERY_BROKER_USE_SSL = {
-        'ssl_cert_reqs': ssl.CERT_REQUIRED,
-        'ssl_ca_certs': None,          # Use system CA bundle
         'ssl_context': _redis_ssl_ctx,
     }
-    CELERY_REDIS_BACKEND_USE_SSL = CELERY_BROKER_USE_SSL
+    # Result backend is django-db (PostgreSQL), not Redis — no SSL config needed.
 
 
 # ─── Qdrant Cloud — Vector Database ─────────────────────────────────────────

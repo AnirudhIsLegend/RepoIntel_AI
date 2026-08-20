@@ -40,11 +40,18 @@ def _get_client() -> QdrantClient:
             _client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
             logger.info('Connected to Qdrant Cloud at %s', qdrant_url)
         else:
-            # In-memory Qdrant for local development / testing
-            _client = QdrantClient(':memory:')
-            logger.warning(
-                'QDRANT_URL not set — using in-memory Qdrant (data will not persist)'
-            )
+            from django.conf import settings as django_settings
+            if getattr(django_settings, 'DEBUG', False):
+                # In-memory Qdrant for local development / testing
+                _client = QdrantClient(':memory:')
+                logger.warning(
+                    'QDRANT_URL not set — using in-memory Qdrant (data will not persist)'
+                )
+            else:
+                raise RuntimeError(
+                    'QDRANT_URL is not configured. '
+                    'Set QDRANT_URL and QDRANT_API_KEY environment variables for production.'
+                )
     return _client
 
 

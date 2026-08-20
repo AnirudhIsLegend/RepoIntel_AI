@@ -30,6 +30,8 @@ logger = logging.getLogger(__name__)
     retry_backoff=True,           # Exponential backoff: 30s, 60s, 120s
     retry_backoff_max=300,        # Cap backoff at 5 minutes
     acks_late=True,               # Acknowledge only after task completes
+    soft_time_limit=600,          # 10 min soft limit (raises SoftTimeLimitExceeded)
+    time_limit=900,               # 15 min hard kill
     name='repositories.process_repository',
 )
 def process_repository(self, repo_id: int, github_url: str) -> dict:
