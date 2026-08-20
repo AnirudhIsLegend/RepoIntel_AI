@@ -14,7 +14,7 @@ builder = "nixpacks"
 buildCommand = "pip install -r requirements.txt"
 
 [deploy]
-startCommand = "celery -A config worker --loglevel=info"
+startCommand = "celery -A config worker --loglevel=info --concurrency=1"
 # No healthcheck — this is a background worker, not an HTTP server
 healthcheckPath = ""
 # Disable Railway's automatic port assignment
