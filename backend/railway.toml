@@ -1,0 +1,21 @@
+# ── Railway deployment — Celery worker only ──────────────────────────────────
+#
+# This file is read exclusively by Railway. It does NOT affect the
+# Django API deployment on Render, which uses the Dockerfile.
+#
+# Railway service configuration:
+#   - Root directory:  /backend
+#   - Build command:   pip install -r requirements.txt
+#   - Start command:   celery -A config worker --loglevel=info
+#   - No HTTP port:    This is a worker-only service (no web traffic)
+
+[build]
+builder = "nixpacks"
+buildCommand = "pip install -r requirements.txt"
+
+[deploy]
+startCommand = "celery -A config worker --loglevel=info"
+# No healthcheck — this is a background worker, not an HTTP server
+healthcheckPath = ""
+# Disable Railway's automatic port assignment
+numReplicas = 1

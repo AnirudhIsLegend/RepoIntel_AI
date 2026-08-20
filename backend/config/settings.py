@@ -17,7 +17,7 @@ SECRET_KEY = config(
 
 DEBUG = config(
     'DEBUG',
-    default=True,
+    default=False,
     cast=bool,
 )
 
@@ -348,6 +348,23 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC'
 
 CELERY_TASK_TRACK_STARTED = True
+
+# Celery 5.4+ requires this to suppress a deprecation warning
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+
+# Upstash Redis uses rediss:// (TLS). Tell Celery to verify the
+# server certificate so the "insecure SSL" warnings disappear.
+if REDIS_URL.startswith('rediss://'):
+    import ssl
+
+    _redis_ssl_ctx = ssl.create_default_context()
+
+    CELERY_BROKER_USE_SSL = {
+        'ssl_cert_reqs': ssl.CERT_REQUIRED,
+        'ssl_ca_certs': None,          # Use system CA bundle
+        'ssl_context': _redis_ssl_ctx,
+    }
+    CELERY_REDIS_BACKEND_USE_SSL = CELERY_BROKER_USE_SSL
 
 
 # ─── Qdrant Cloud — Vector Database ─────────────────────────────────────────
